@@ -62,7 +62,7 @@ def plot_path_by_z(coords, is_extrudes, max_z):
     )
     return fig
 
-st.title("🧠 G-code 3D 시각화 (Z 기준)")
+st.title("🧠 G-code 3D Viewer")
 
 uploaded_file = st.file_uploader("G-code 파일 업로드", type=["gcode", "nc"])
 
@@ -102,4 +102,5 @@ st.markdown("""
 1. `.gcode` 또는 `.nc` 형식의 G-code 파일을 업로드하세요.
 2. 분석 결과와 함께 Z 높이에 따라 점진적으로 출력 경로가 시각화됩니다.
 3. 슬라이더를 움직여 Z 방향으로 경로가 쌓이는 과정을 확인하세요.
+4. 문의: 동아로보틱스(주) 기술연구소 주창우부장(010-6754-2575)
 """)
