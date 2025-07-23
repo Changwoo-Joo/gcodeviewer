@@ -3,42 +3,58 @@ import numpy as np
 import re
 import plotly.graph_objects as go
 import tempfile
+import chardet  # 🔍 인코딩 감지용
 
 st.set_page_config(layout="wide")
 
+# ------------------------------------------------------------
+#  G-code 파싱 함수 (자동 인코딩 감지 포함)
+# ------------------------------------------------------------
 def parse_gcode(file_path):
     coords = []
     is_extrudes = []
     f_value = 0
     last_pos = {'X': None, 'Y': None, 'Z': None}
-    with open(file_path, 'r', encoding='utf-8') as file:
-        for line in file:
-            line = line.strip()
-            if not line or line.startswith(";"):
-                continue
-            x = re.search(r'[Xx]([-+]?[0-9]*\.?[0-9]+)', line)
-            y = re.search(r'[Yy]([-+]?[0-9]*\.?[0-9]+)', line)
-            z = re.search(r'[Zz]([-+]?[0-9]*\.?[0-9]+)', line)
-            e = re.search(r'[Ee]([-+]?[0-9]*\.?[0-9]+)', line)
-            f = re.search(r'[Ff]([-+]?[0-9]*\.?[0-9]+)', line)
-            if x:
-                last_pos['X'] = float(x.group(1))
-            if y:
-                last_pos['Y'] = float(y.group(1))
-            if z:
-                last_pos['Z'] = float(z.group(1))
-            if f:
-                f_value = float(f.group(1))
-            if None not in last_pos.values():
-                coords.append([last_pos['X'], last_pos['Y'], last_pos['Z']])
-                is_extrudes.append(float(e.group(1)) > 0 if e else False)
+
+    # 🔍 인코딩 자동 감지
+    with open(file_path, 'rb') as raw_file:
+        raw_data = raw_file.read()
+        encoding = chardet.detect(raw_data)['encoding']
+
+    for line in raw_data.decode(encoding, errors='replace').splitlines():
+        line = line.strip()
+        if not line or line.startswith(";"):
+            continue
+        x = re.search(r'[Xx]([-+]?[0-9]*\.?[0-9]+)', line)
+        y = re.search(r'[Yy]([-+]?[0-9]*\.?[0-9]+)', line)
+        z = re.search(r'[Zz]([-+]?[0-9]*\.?[0-9]+)', line)
+        e = re.search(r'[Ee]([-+]?[0-9]*\.?[0-9]+)', line)
+        f = re.search(r'[Ff]([-+]?[0-9]*\.?[0-9]+)', line)
+        if x:
+            last_pos['X'] = float(x.group(1))
+        if y:
+            last_pos['Y'] = float(y.group(1))
+        if z:
+            last_pos['Z'] = float(z.group(1))
+        if f:
+            f_value = float(f.group(1))
+        if None not in last_pos.values():
+            coords.append([last_pos['X'], last_pos['Y'], last_pos['Z']])
+            is_extrudes.append(float(e.group(1)) > 0 if e else False)
+
     return np.array(coords), is_extrudes, f_value
 
+# ------------------------------------------------------------
+#  거리 계산 함수
+# ------------------------------------------------------------
 def compute_total_distance(coords):
     diffs = np.diff(coords, axis=0)
     distances = np.linalg.norm(diffs, axis=1)
     return np.sum(distances)
 
+# ------------------------------------------------------------
+#  Z 기준 경로 시각화
+# ------------------------------------------------------------
 def plot_path_by_z(coords, is_extrudes, max_z):
     fig = go.Figure()
     for i in range(1, len(coords)):
@@ -62,6 +78,9 @@ def plot_path_by_z(coords, is_extrudes, max_z):
     )
     return fig
 
+# ------------------------------------------------------------
+#  Streamlit 앱 UI 구성
+# ------------------------------------------------------------
 st.title("🧠 G-code 3D Viewer")
 
 uploaded_file = st.file_uploader("G-code 파일 업로드", type=["gcode", "nc"])
@@ -74,7 +93,7 @@ if uploaded_file:
     coords, is_extrudes, f_value = parse_gcode(temp_path)
 
     if len(coords) < 2:
-        st.error("G-code 내 유효한 좌표가 부족합니다.")
+        st.error("⚠ G-code 내 유효한 좌표가 부족합니다.")
     else:
         total_distance = compute_total_distance(coords)
         est_time = total_distance / f_value if f_value > 0 else 0
@@ -97,6 +116,9 @@ if uploaded_file:
             fig = plot_path_by_z(coords, is_extrudes, current_z)
             st.plotly_chart(fig, use_container_width=True)
 
+# ------------------------------------------------------------
+#  사용 설명
+# ------------------------------------------------------------
 st.markdown("""
 **📘 사용 방법**
 1. `.gcode` 또는 `.nc` 형식의 G-code 파일을 업로드하세요.
