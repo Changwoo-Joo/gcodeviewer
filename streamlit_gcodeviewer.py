@@ -15,7 +15,7 @@ def parse_gcode(file_path):
     is_extrudes_buffer = []
     f_value = 0.0
     last_pos = {'X': None, 'Y': None, 'Z': None}
-    current_extrude = False  # 기본값
+    current_extrude = False
 
     with open(file_path, 'rb') as raw_file:
         raw_data = raw_file.read()
@@ -45,9 +45,8 @@ def parse_gcode(file_path):
             is_extrudes_buffer.append(current_extrude if found_e else current_extrude)
 
     coords = np.array(coords_buffer)
-    if not any(is_extrudes_buffer):  # E값이 하나도 없으면 전부 실선 처리
-        is_extrudes_buffer = [True] * len(coords_buffer)
 
+    # E값이 모두 없는 경우 → False만 존재 → 회색 실선 처리용으로 유지
     return coords, is_extrudes_buffer, f_value
 
 # ------------------------------------------------------------
@@ -59,10 +58,10 @@ def compute_total_distance(coords):
     return np.sum(distances)
 
 # ------------------------------------------------------------
-#  시각화 함수
+#  시각화 함수 (E값 여부로 스타일 분기 + 연결 유지)
 # ------------------------------------------------------------
 def plot_path_by_z(coords, is_extrudes, max_z):
-    def group_segments(coords, is_extrudes, target=True):
+    def group_segments(coords, is_extrudes, target_extrude):
         group = []
         grouped_lines = []
 
@@ -70,7 +69,7 @@ def plot_path_by_z(coords, is_extrudes, max_z):
             if coords[i][2] > max_z and coords[i - 1][2] > max_z:
                 continue
 
-            if is_extrudes[i] == target:
+            if is_extrudes[i] == target_extrude:
                 if not group:
                     group.append(coords[i - 1])
                 group.append(coords[i])
@@ -85,8 +84,20 @@ def plot_path_by_z(coords, is_extrudes, max_z):
 
     fig = go.Figure()
 
-    ex_segments = group_segments(coords, is_extrudes, target=True)
+    # 🔵 파란 실선 (E값 있음)
+    ex_segments = group_segments(coords, is_extrudes, target_extrude=True)
     for seg in ex_segments:
+        a = seg.T
+        fig.add_trace(go.Scatter3d(
+            x=a[0], y=a[1], z=a[2],
+            mode='lines',
+            line=dict(color='blue', width=2),
+            showlegend=False
+        ))
+
+    # ⚪ 회색 실선 (E값 없음 → 이동만)
+    move_segments = group_segments(coords, is_extrudes, target_extrude=False)
+    for seg in move_segments:
         a = seg.T
         fig.add_trace(go.Scatter3d(
             x=a[0], y=a[1], z=a[2],
@@ -108,7 +119,7 @@ def plot_path_by_z(coords, is_extrudes, max_z):
 # ------------------------------------------------------------
 #  Streamlit UI
 # ------------------------------------------------------------
-st.title("🧠 G-code 3D Viewer (빠른 실선 시각화 버전)")
+st.title("🧠 G-code 3D Viewer (E값 구분: 파란/회색 실선)")
 
 uploaded_file = st.file_uploader("G-code 파일 업로드", type=["gcode", "nc"])
 
@@ -149,7 +160,6 @@ if uploaded_file:
 st.markdown("""
 **📘 사용 방법**
 1. `.gcode` 또는 `.nc` 형식의 G-code 파일을 업로드하세요.
-2. 업로드하면 자동으로 전체 경로를 회색 실선으로 빠르게 시각화합니다.
-3. Z 슬라이더를 통해 출력 높이에 따른 경로를 제한해볼 수 있습니다.
-4. E값이 포함된 G-code에서도 자동 대응됩니다.
+2. E값이 있는 압출 구간은 **파란색 실선**, 없는 이동 구간은 **얇은 회색 실선**으로 구분됩니다.
+3. Z 슬라이더로 출력 높이를 제한하며 경로를 확인할 수 있습니다.
 """)
