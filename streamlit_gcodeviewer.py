@@ -64,21 +64,43 @@ def compute_total_distance(coords):
     return np.sum(distances)
 
 # ------------------------------------------------------------
-#  Z 기준 경로 시각화
+#  Z 기준 경로 시각화 (실선/점선 구분)
 # ------------------------------------------------------------
 def plot_path_by_z(coords, is_extrudes, max_z):
-    fig = go.Figure()
+    lines_ex = []
+    lines_move = []
+
     for i in range(1, len(coords)):
-        if coords[i][2] <= max_z or coords[i-1][2] <= max_z:
-            x, y, z = zip(coords[i-1], coords[i])
-            color = 'blue' if is_extrudes[i] else 'gray'
-            width = 4 if is_extrudes[i] else 2
-            fig.add_trace(go.Scatter3d(
-                x=x, y=y, z=z,
-                mode='lines',
-                line=dict(color=color, width=width),
-                showlegend=False
-            ))
+        z1, z2 = coords[i - 1][2], coords[i][2]
+        if z1 <= max_z or z2 <= max_z:
+            segment = [coords[i - 1], coords[i], [None, None, None]]
+            if is_extrudes[i]:
+                lines_ex.extend(segment)
+            else:
+                lines_move.extend(segment)
+
+    fig = go.Figure()
+
+    if lines_ex:
+        a = np.array(lines_ex).T
+        fig.add_trace(go.Scatter3d(
+            x=a[0], y=a[1], z=a[2],
+            mode='lines',
+            line=dict(color='blue', width=3),
+            name="Extrude",
+            showlegend=False
+        ))
+
+    if lines_move:
+        a = np.array(lines_move).T
+        fig.add_trace(go.Scatter3d(
+            x=a[0], y=a[1], z=a[2],
+            mode='lines',
+            line=dict(color='gray', width=1, dash='dot'),
+            name="Move",
+            showlegend=False
+        ))
+
     fig.update_layout(
         scene=dict(
             xaxis_title='X', yaxis_title='Y', zaxis_title='Z',
@@ -92,13 +114,13 @@ def plot_path_by_z(coords, is_extrudes, max_z):
 # ------------------------------------------------------------
 #  Streamlit 앱 UI 구성
 # ------------------------------------------------------------
-st.title("🧠 G-code 3D Viewer (고속 최적화 + 진행률 표시)")
+st.title("🧠 G-code 3D Viewer (고속 최적화 + 진행률 + 실선/점선 구분)")
 
 uploaded_file = st.file_uploader("G-code 파일 업로드", type=["gcode", "nc"])
 
 if uploaded_file:
     st.info("🧠 G-code 파일 업로드 완료. 파싱을 시작합니다...")
-    time.sleep(1)  # ❗ Streamlit UI가 진행률 바를 제대로 표시할 수 있도록 대기
+    time.sleep(1)
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".gcode") as tmp:
         tmp.write(uploaded_file.read())
@@ -136,7 +158,7 @@ if uploaded_file:
 st.markdown("""
 **📘 사용 방법**
 1. `.gcode` 또는 `.nc` 형식의 G-code 파일을 업로드하세요.
-2. 분석 결과와 함께 Z 높이에 따라 점진적으로 출력 경로가 시각화됩니다.
-3. 슬라이더를 움직여 Z 방향으로 경로가 쌓이는 과정을 확인하세요.
-4. 문의: 동아로보틱스(주) 기술연구소 주창우부장(010-6754-2575)
+2. 분석 결과와 함께 Z 높이에 따라 출력 경로가 시각화됩니다.
+3. E값 기준으로 실선(압출)과 점선(이동)이 구분되어 표시됩니다.
+4. 문의: 동아로보틱스(주) 기술연구소 주창우 부장 (010-6754-2575)
 """)
