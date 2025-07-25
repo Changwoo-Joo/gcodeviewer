@@ -16,6 +16,7 @@ def parse_gcode(file_path):
     is_extrudes_buffer = []
     f_value = 0.0
     last_pos = {'X': None, 'Y': None, 'Z': None}
+    current_extrude = False  # 기본값
 
     with open(file_path, 'rb') as raw_file:
         raw_data = raw_file.read()
@@ -31,7 +32,7 @@ def parse_gcode(file_path):
             continue
 
         matches = re.findall(r'([XYZEFe])([-+]?[0-9]*\.?[0-9]+)', line)
-        is_extrude = None
+        found_e = False
         for axis, value in matches:
             axis_upper = axis.upper()
             if axis_upper in last_pos:
@@ -39,11 +40,12 @@ def parse_gcode(file_path):
             elif axis_upper == 'F':
                 f_value = float(value)
             elif axis_upper == 'E':
-                is_extrude = float(value) > 0
+                current_extrude = float(value) > 0
+                found_e = True
 
         if None not in last_pos.values():
             coords_buffer.append([last_pos['X'], last_pos['Y'], last_pos['Z']])
-            is_extrudes_buffer.append(is_extrude if is_extrude is not None else False)
+            is_extrudes_buffer.append(current_extrude if found_e else current_extrude)
 
         if idx % 1000 == 0 or idx == total_lines - 1:
             progress_bar.progress((idx + 1) / total_lines, text=f"🔄 파싱 중... {int((idx + 1) / total_lines * 100)}%")
@@ -52,8 +54,11 @@ def parse_gcode(file_path):
     progress_bar.empty()
 
     coords = np.array(coords_buffer)
-    is_extrudes = is_extrudes_buffer
-    return coords, is_extrudes, f_value
+    # 🔧 E값이 전혀 없는 경우 → 전부 실선으로 처리
+    if not any(is_extrudes_buffer):
+        is_extrudes_buffer = [True] * len(coords_buffer)
+
+    return coords, is_extrudes_buffer, f_value
 
 # ------------------------------------------------------------
 #  거리 계산 함수
@@ -64,7 +69,7 @@ def compute_total_distance(coords):
     return np.sum(distances)
 
 # ------------------------------------------------------------
-#  시각화 함수 (실선/점선 구분 + 선 연결 유지)
+#  시각화 함수 (실선 처리만)
 # ------------------------------------------------------------
 def plot_path_by_z(coords, is_extrudes, max_z):
     def group_segments(coords, is_extrudes, target=True):
@@ -73,11 +78,11 @@ def plot_path_by_z(coords, is_extrudes, max_z):
 
         for i in range(1, len(coords)):
             if coords[i][2] > max_z and coords[i - 1][2] > max_z:
-                continue  # 둘 다 범위 밖이면 무시
+                continue
 
-            is_match = is_extrudes[i] == target
-            if is_match:
-                group.append(coords[i - 1])
+            if is_extrudes[i] == target:
+                if not group:
+                    group.append(coords[i - 1])
                 group.append(coords[i])
             elif group:
                 grouped_lines.append(np.array(group))
@@ -85,29 +90,19 @@ def plot_path_by_z(coords, is_extrudes, max_z):
 
         if group:
             grouped_lines.append(np.array(group))
+
         return grouped_lines
 
     fig = go.Figure()
 
-    # 실선: 압출 구간
+    # 실선 처리 (회색 얇은 선)
     ex_segments = group_segments(coords, is_extrudes, target=True)
     for seg in ex_segments:
         a = seg.T
         fig.add_trace(go.Scatter3d(
             x=a[0], y=a[1], z=a[2],
             mode='lines',
-            line=dict(color='blue', width=3),
-            showlegend=False
-        ))
-
-    # 점선: 비압출 이동 구간
-    move_segments = group_segments(coords, is_extrudes, target=False)
-    for seg in move_segments:
-        a = seg.T
-        fig.add_trace(go.Scatter3d(
-            x=a[0], y=a[1], z=a[2],
-            mode='lines',
-            line=dict(color='gray', width=1, dash='dot'),
+            line=dict(color='gray', width=1),
             showlegend=False
         ))
 
@@ -124,7 +119,7 @@ def plot_path_by_z(coords, is_extrudes, max_z):
 # ------------------------------------------------------------
 #  Streamlit 앱 UI
 # ------------------------------------------------------------
-st.title("🧠 G-code 3D Viewer (속도 + 실선/점선 + 부드러운 연결)")
+st.title("🧠 G-code 3D Viewer (E값 없으면 회색 실선)")
 
 uploaded_file = st.file_uploader("G-code 파일 업로드", type=["gcode", "nc"])
 
@@ -167,8 +162,7 @@ if uploaded_file:
 # ------------------------------------------------------------
 st.markdown("""
 **📘 사용 방법**
-1. `.gcode` 또는 `.nc` 형식의 G-code 파일을 업로드하세요.
-2. Z 높이에 따라 점진적으로 출력 경로가 시각화됩니다.
-3. E값에 따라 실선(압출)과 점선(이동)이 구분되어 출력됩니다.
-4. 문의: 동아로보틱스(주) 기술연구소 주창우 부장 (010-6754-2575)
+1. `.gcode` 또는 `.nc` 파일을 업로드하면 G-code를 시각화합니다.
+2. E값이 포함된 경우 실선/점선을 구분하고, 없으면 모두 회색 실선으로 처리합니다.
+3. Z 슬라이더를 통해 높이별 경로를 필터링할 수 있습니다.
 """)
