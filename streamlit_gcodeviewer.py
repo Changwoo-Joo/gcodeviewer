@@ -4,7 +4,6 @@ import re
 import plotly.graph_objects as go
 import tempfile
 import chardet
-import time
 
 st.set_page_config(layout="wide")
 
@@ -23,10 +22,8 @@ def parse_gcode(file_path):
         encoding = chardet.detect(raw_data)['encoding']
 
     lines = raw_data.decode(encoding, errors='replace').splitlines()
-    total_lines = len(lines)
-    progress_bar = st.progress(0, text="🔄 G-code 파싱 중...")
 
-    for idx, line in enumerate(lines):
+    for line in lines:
         line = line.strip()
         if not line or line.startswith(";"):
             continue
@@ -47,15 +44,8 @@ def parse_gcode(file_path):
             coords_buffer.append([last_pos['X'], last_pos['Y'], last_pos['Z']])
             is_extrudes_buffer.append(current_extrude if found_e else current_extrude)
 
-        if idx % 1000 == 0 or idx == total_lines - 1:
-            progress_bar.progress((idx + 1) / total_lines, text=f"🔄 파싱 중... {int((idx + 1) / total_lines * 100)}%")
-            time.sleep(0.001)
-
-    progress_bar.empty()
-
     coords = np.array(coords_buffer)
-    # 🔧 E값이 전혀 없는 경우 → 전부 실선으로 처리
-    if not any(is_extrudes_buffer):
+    if not any(is_extrudes_buffer):  # E값이 하나도 없으면 전부 실선 처리
         is_extrudes_buffer = [True] * len(coords_buffer)
 
     return coords, is_extrudes_buffer, f_value
@@ -69,7 +59,7 @@ def compute_total_distance(coords):
     return np.sum(distances)
 
 # ------------------------------------------------------------
-#  시각화 함수 (실선 처리만)
+#  시각화 함수
 # ------------------------------------------------------------
 def plot_path_by_z(coords, is_extrudes, max_z):
     def group_segments(coords, is_extrudes, target=True):
@@ -95,7 +85,6 @@ def plot_path_by_z(coords, is_extrudes, max_z):
 
     fig = go.Figure()
 
-    # 실선 처리 (회색 얇은 선)
     ex_segments = group_segments(coords, is_extrudes, target=True)
     for seg in ex_segments:
         a = seg.T
@@ -117,16 +106,13 @@ def plot_path_by_z(coords, is_extrudes, max_z):
     return fig
 
 # ------------------------------------------------------------
-#  Streamlit 앱 UI
+#  Streamlit UI
 # ------------------------------------------------------------
-st.title("🧠 G-code 3D Viewer (E값 없으면 회색 실선)")
+st.title("🧠 G-code 3D Viewer (빠른 실선 시각화 버전)")
 
 uploaded_file = st.file_uploader("G-code 파일 업로드", type=["gcode", "nc"])
 
 if uploaded_file:
-    st.info("🧠 G-code 파일 업로드 완료. 파싱을 시작합니다...")
-    time.sleep(1)
-
     with tempfile.NamedTemporaryFile(delete=False, suffix=".gcode") as tmp:
         tmp.write(uploaded_file.read())
         temp_path = tmp.name
@@ -162,7 +148,8 @@ if uploaded_file:
 # ------------------------------------------------------------
 st.markdown("""
 **📘 사용 방법**
-1. `.gcode` 또는 `.nc` 파일을 업로드하면 G-code를 시각화합니다.
-2. E값이 포함된 경우 실선/점선을 구분하고, 없으면 모두 회색 실선으로 처리합니다.
-3. Z 슬라이더를 통해 높이별 경로를 필터링할 수 있습니다.
+1. `.gcode` 또는 `.nc` 형식의 G-code 파일을 업로드하세요.
+2. 업로드하면 자동으로 전체 경로를 회색 실선으로 빠르게 시각화합니다.
+3. Z 슬라이더를 통해 출력 높이에 따른 경로를 제한해볼 수 있습니다.
+4. E값이 포함된 G-code에서도 자동 대응됩니다.
 """)
