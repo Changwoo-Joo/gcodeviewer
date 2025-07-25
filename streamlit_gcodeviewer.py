@@ -9,14 +9,14 @@ import time
 st.set_page_config(layout="wide")
 
 # ------------------------------------------------------------
-#  최적화된 G-code 파싱 함수
+#  G-code 파싱 함수
 # ------------------------------------------------------------
 def parse_gcode(file_path):
     coords_buffer = []
     is_extrudes_buffer = []
     f_value = 0.0
     last_pos = {'X': None, 'Y': None, 'Z': None}
-    
+
     with open(file_path, 'rb') as raw_file:
         raw_data = raw_file.read()
         encoding = chardet.detect(raw_data)['encoding']
@@ -64,40 +64,50 @@ def compute_total_distance(coords):
     return np.sum(distances)
 
 # ------------------------------------------------------------
-#  Z 기준 경로 시각화 (실선/점선 구분)
+#  시각화 함수 (실선/점선 구분 + 선 연결 유지)
 # ------------------------------------------------------------
 def plot_path_by_z(coords, is_extrudes, max_z):
-    lines_ex = []
-    lines_move = []
+    def group_segments(coords, is_extrudes, target=True):
+        group = []
+        grouped_lines = []
 
-    for i in range(1, len(coords)):
-        z1, z2 = coords[i - 1][2], coords[i][2]
-        if z1 <= max_z or z2 <= max_z:
-            segment = [coords[i - 1], coords[i], [None, None, None]]
-            if is_extrudes[i]:
-                lines_ex.extend(segment)
-            else:
-                lines_move.extend(segment)
+        for i in range(1, len(coords)):
+            if coords[i][2] > max_z and coords[i - 1][2] > max_z:
+                continue  # 둘 다 범위 밖이면 무시
+
+            is_match = is_extrudes[i] == target
+            if is_match:
+                group.append(coords[i - 1])
+                group.append(coords[i])
+            elif group:
+                grouped_lines.append(np.array(group))
+                group = []
+
+        if group:
+            grouped_lines.append(np.array(group))
+        return grouped_lines
 
     fig = go.Figure()
 
-    if lines_ex:
-        a = np.array(lines_ex).T
+    # 실선: 압출 구간
+    ex_segments = group_segments(coords, is_extrudes, target=True)
+    for seg in ex_segments:
+        a = seg.T
         fig.add_trace(go.Scatter3d(
             x=a[0], y=a[1], z=a[2],
             mode='lines',
             line=dict(color='blue', width=3),
-            name="Extrude",
             showlegend=False
         ))
 
-    if lines_move:
-        a = np.array(lines_move).T
+    # 점선: 비압출 이동 구간
+    move_segments = group_segments(coords, is_extrudes, target=False)
+    for seg in move_segments:
+        a = seg.T
         fig.add_trace(go.Scatter3d(
             x=a[0], y=a[1], z=a[2],
             mode='lines',
             line=dict(color='gray', width=1, dash='dot'),
-            name="Move",
             showlegend=False
         ))
 
@@ -112,9 +122,9 @@ def plot_path_by_z(coords, is_extrudes, max_z):
     return fig
 
 # ------------------------------------------------------------
-#  Streamlit 앱 UI 구성
+#  Streamlit 앱 UI
 # ------------------------------------------------------------
-st.title("🧠 G-code 3D Viewer (고속 최적화 + 진행률 + 실선/점선 구분)")
+st.title("🧠 G-code 3D Viewer (속도 + 실선/점선 + 부드러운 연결)")
 
 uploaded_file = st.file_uploader("G-code 파일 업로드", type=["gcode", "nc"])
 
@@ -158,7 +168,7 @@ if uploaded_file:
 st.markdown("""
 **📘 사용 방법**
 1. `.gcode` 또는 `.nc` 형식의 G-code 파일을 업로드하세요.
-2. 분석 결과와 함께 Z 높이에 따라 출력 경로가 시각화됩니다.
-3. E값 기준으로 실선(압출)과 점선(이동)이 구분되어 표시됩니다.
+2. Z 높이에 따라 점진적으로 출력 경로가 시각화됩니다.
+3. E값에 따라 실선(압출)과 점선(이동)이 구분되어 출력됩니다.
 4. 문의: 동아로보틱스(주) 기술연구소 주창우 부장 (010-6754-2575)
 """)
