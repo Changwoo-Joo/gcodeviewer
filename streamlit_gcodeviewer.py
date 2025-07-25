@@ -92,11 +92,14 @@ def plot_path_by_z(coords, is_extrudes, max_z):
 # ------------------------------------------------------------
 #  Streamlit 앱 UI 구성
 # ------------------------------------------------------------
-st.title("🧠 G-code 3D Viewer (고속 최적화 버전)")
+st.title("🧠 G-code 3D Viewer (고속 최적화 + 진행률 표시)")
 
 uploaded_file = st.file_uploader("G-code 파일 업로드", type=["gcode", "nc"])
 
 if uploaded_file:
+    st.info("🧠 G-code 파일 업로드 완료. 파싱을 시작합니다...")
+    time.sleep(1)  # ❗ Streamlit UI가 진행률 바를 제대로 표시할 수 있도록 대기
+
     with tempfile.NamedTemporaryFile(delete=False, suffix=".gcode") as tmp:
         tmp.write(uploaded_file.read())
         temp_path = tmp.name
