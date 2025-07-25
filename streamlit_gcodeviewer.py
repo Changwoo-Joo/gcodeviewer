@@ -8,7 +8,7 @@ import chardet  # 🔍 인코딩 감지용
 st.set_page_config(layout="wide")
 
 # ------------------------------------------------------------
-#  G-code 파싱 함수 (자동 인코딩 감지 포함)
+#  G-code 파싱 함수 (진행률 표시 포함)
 # ------------------------------------------------------------
 def parse_gcode(file_path):
     coords = []
@@ -21,7 +21,12 @@ def parse_gcode(file_path):
         raw_data = raw_file.read()
         encoding = chardet.detect(raw_data)['encoding']
 
-    for line in raw_data.decode(encoding, errors='replace').splitlines():
+    lines = raw_data.decode(encoding, errors='replace').splitlines()
+    total_lines = len(lines)
+
+    progress_bar = st.progress(0, text="🔄 G-code 파싱 중...")
+
+    for idx, line in enumerate(lines):
         line = line.strip()
         if not line or line.startswith(";"):
             continue
@@ -41,6 +46,12 @@ def parse_gcode(file_path):
         if None not in last_pos.values():
             coords.append([last_pos['X'], last_pos['Y'], last_pos['Z']])
             is_extrudes.append(float(e.group(1)) > 0 if e else False)
+
+        # 🔄 진행률 업데이트 (500줄마다)
+        if idx % 500 == 0 or idx == total_lines - 1:
+            progress_bar.progress((idx + 1) / total_lines, text=f"🔄 파싱 중... {int((idx + 1) / total_lines * 100)}%")
+
+    progress_bar.empty()  # ✅ 완료되면 진행 바 제거
 
     return np.array(coords), is_extrudes, f_value
 
