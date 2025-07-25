@@ -3,57 +3,57 @@ import numpy as np
 import re
 import plotly.graph_objects as go
 import tempfile
-import chardet  # 🔍 인코딩 감지용
+import chardet
+import time
 
 st.set_page_config(layout="wide")
 
 # ------------------------------------------------------------
-#  G-code 파싱 함수 (진행률 표시 포함)
+#  최적화된 G-code 파싱 함수
 # ------------------------------------------------------------
 def parse_gcode(file_path):
-    coords = []
-    is_extrudes = []
-    f_value = 0
+    coords_buffer = []
+    is_extrudes_buffer = []
+    f_value = 0.0
     last_pos = {'X': None, 'Y': None, 'Z': None}
-
-    # 🔍 인코딩 자동 감지
+    
     with open(file_path, 'rb') as raw_file:
         raw_data = raw_file.read()
         encoding = chardet.detect(raw_data)['encoding']
 
     lines = raw_data.decode(encoding, errors='replace').splitlines()
     total_lines = len(lines)
-
     progress_bar = st.progress(0, text="🔄 G-code 파싱 중...")
 
     for idx, line in enumerate(lines):
         line = line.strip()
         if not line or line.startswith(";"):
             continue
-        x = re.search(r'[Xx]([-+]?[0-9]*\.?[0-9]+)', line)
-        y = re.search(r'[Yy]([-+]?[0-9]*\.?[0-9]+)', line)
-        z = re.search(r'[Zz]([-+]?[0-9]*\.?[0-9]+)', line)
-        e = re.search(r'[Ee]([-+]?[0-9]*\.?[0-9]+)', line)
-        f = re.search(r'[Ff]([-+]?[0-9]*\.?[0-9]+)', line)
-        if x:
-            last_pos['X'] = float(x.group(1))
-        if y:
-            last_pos['Y'] = float(y.group(1))
-        if z:
-            last_pos['Z'] = float(z.group(1))
-        if f:
-            f_value = float(f.group(1))
+
+        matches = re.findall(r'([XYZEFe])([-+]?[0-9]*\.?[0-9]+)', line)
+        is_extrude = None
+        for axis, value in matches:
+            axis_upper = axis.upper()
+            if axis_upper in last_pos:
+                last_pos[axis_upper] = float(value)
+            elif axis_upper == 'F':
+                f_value = float(value)
+            elif axis_upper == 'E':
+                is_extrude = float(value) > 0
+
         if None not in last_pos.values():
-            coords.append([last_pos['X'], last_pos['Y'], last_pos['Z']])
-            is_extrudes.append(float(e.group(1)) > 0 if e else False)
+            coords_buffer.append([last_pos['X'], last_pos['Y'], last_pos['Z']])
+            is_extrudes_buffer.append(is_extrude if is_extrude is not None else False)
 
-        # 🔄 진행률 업데이트 (500줄마다)
-        if idx % 500 == 0 or idx == total_lines - 1:
+        if idx % 1000 == 0 or idx == total_lines - 1:
             progress_bar.progress((idx + 1) / total_lines, text=f"🔄 파싱 중... {int((idx + 1) / total_lines * 100)}%")
+            time.sleep(0.001)
 
-    progress_bar.empty()  # ✅ 완료되면 진행 바 제거
+    progress_bar.empty()
 
-    return np.array(coords), is_extrudes, f_value
+    coords = np.array(coords_buffer)
+    is_extrudes = is_extrudes_buffer
+    return coords, is_extrudes, f_value
 
 # ------------------------------------------------------------
 #  거리 계산 함수
@@ -92,7 +92,7 @@ def plot_path_by_z(coords, is_extrudes, max_z):
 # ------------------------------------------------------------
 #  Streamlit 앱 UI 구성
 # ------------------------------------------------------------
-st.title("🧠 G-code 3D Viewer")
+st.title("🧠 G-code 3D Viewer (고속 최적화 버전)")
 
 uploaded_file = st.file_uploader("G-code 파일 업로드", type=["gcode", "nc"])
 
