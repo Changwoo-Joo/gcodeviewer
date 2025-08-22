@@ -19,7 +19,8 @@ def parse_gcode(file_path):
 
     with open(file_path, 'rb') as raw_file:
         raw_data = raw_file.read()
-        encoding = chardet.detect(raw_data)['encoding']
+        enc_info = chardet.detect(raw_data)
+        encoding = enc_info.get('encoding') or 'utf-8'  # 인코딩 기본값 가드
         lines = raw_data.decode(encoding, errors='replace').splitlines()
 
     for line in lines:
@@ -52,6 +53,8 @@ def parse_gcode(file_path):
 #  거리 계산 함수
 # ------------------------------------------------------------
 def compute_total_distance(coords):
+    if len(coords) < 2:
+        return 0.0
     diffs = np.diff(coords, axis=0)
     distances = np.linalg.norm(diffs, axis=1)
     return np.sum(distances)
@@ -65,6 +68,7 @@ def plot_path_by_z(coords, is_extrudes, max_z):
         group = []
         grouped_lines = []
         for i in range(1, len(coords)):
+            # max_z 초과하는 두 점 사이의 선분은 제외
             if coords[i][2] > max_z and coords[i - 1][2] > max_z:
                 continue
             if is_extrudes[i] == target_extrude:
@@ -147,13 +151,17 @@ if uploaded_file:
             """)
 
         with col2:
-            current_z = st.slider(
-                "🧱 Z 진행 높이 (mm)",
-                min_value=z_min,
-                max_value=z_max,
-                value=z_max,
-                step=1.0
-            )
+            if z_min == z_max:
+                current_z = z_max
+                st.info(f"단일 레이어(Z={z_max:.1f} mm)입니다.")
+            else:
+                current_z = st.slider(
+                    "🧱 Z 진행 높이 (mm)",
+                    min_value=z_min,
+                    max_value=z_max,
+                    value=z_max,
+                    step=1.0
+                )
 
         with st.expander("🔍 경로 시각화 보기", expanded=True):
             fig = plot_path_by_z(coords, is_extrudes, current_z)
